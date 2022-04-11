@@ -3,39 +3,46 @@
     windows_subsystem = "windows"
 )]
 
-use std::sync::{Arc, Mutex};
-
-use overlay::{add_overlay, WindowsOverlayView};
+use std::sync::Weak;
+use tao::platform::windows::WindowBuilderExtWindows;
 use tauri::Manager;
-
-mod overlay;
-
-struct OverlayState(Arc<Mutex<Option<WindowsOverlayView>>>);
-impl OverlayState {
-    pub fn new() -> Self {
-        OverlayState(Arc::new(Mutex::new(None)))
-    }
-    pub fn set_overlay(&self, overlay: WindowsOverlayView) {
-        *self.0.lock().unwrap() = Some(overlay);
-    }
-}
 
 fn main() {
     let app = tauri::Builder::default()
-        .manage(OverlayState::new())
         .build(tauri::generate_context!())
         .expect("failed to build app");
 
     app.run(move |handle, event| match event {
         tauri::RunEvent::Ready => {
-            let overlay = add_overlay(handle);
+            add_overlay(handle);
 
-            // Storing the overlay in state so that it doesn't immediately get
-            // dropped, but, the bug happens whether or not the overlay struct
+            // The panic happens whether or not the overlay struct
             // is kept around.
-            let state: tauri::State<OverlayState> = handle.state();
-            state.set_overlay(overlay);
+            // let state: tauri::State<OverlayState> = handle.state();
+            // state.set_overlay(overlay);
         }
         _ => {}
     })
+}
+
+pub fn add_overlay(app_handle: &tauri::AppHandle) -> Weak<tao::window::Window> {
+    let window = app_handle
+        .get_window("main")
+        .expect("failed to get main window");
+
+    let hwnd = window.hwnd().expect("failed to get HWND");
+    app_handle
+        .create_tao_window(move || {
+            let window_builder = tao::window::WindowBuilder::new()
+                .with_always_on_top(false)
+                .with_decorations(false)
+                .with_resizable(false)
+                .with_visible(true)
+                .with_position(tao::dpi::LogicalPosition::<u32>::new(30, 30))
+                .with_owner_window(hwnd)
+                .with_inner_size(tao::dpi::LogicalSize::<u32>::new(200, 200));
+
+            ("Overlay".to_string(), window_builder)
+        })
+        .expect("failed to create overlay window")
 }
